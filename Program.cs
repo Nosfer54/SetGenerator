@@ -109,13 +109,15 @@ namespace mtg
         public static Card GetCard(Set set, String path, Int32 number)
         {
             Card card = new Card();
+
+            string urlCardMtgRu = "http://www.mtg.ru/cards/search.phtml?Grp=" + set.setCode + "&Number=";
+            WebClient mtgWebClient = new WebClient();
+            HtmlDocument htmlDocumentMTG = new HtmlDocument();
+            htmlDocumentMTG.LoadHtml(mtgWebClient.DownloadString(urlCardMtgRu + number));
+
+            // Собираем базовые данные карты
             try
             {
-                string urlCardMtgRu = "http://www.mtg.ru/cards/search.phtml?Grp=" + set.setCode + "&Number=";
-                WebClient mtgWebClient = new WebClient();
-                HtmlDocument htmlDocumentMTG = new HtmlDocument();
-                htmlDocumentMTG.LoadHtml(mtgWebClient.DownloadString(urlCardMtgRu + number));
-
                 var N = htmlDocumentMTG.DocumentNode.SelectSingleNode("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']" + "//h2").InnerText;
                 card.Name = (N.Substring(N.IndexOf("//") + 3, N.Length - N.IndexOf("//") - 3)).Trim();
                 card.NameENG = (N.Substring(0, N.IndexOf("//"))).Trim();
@@ -124,10 +126,23 @@ namespace mtg
                 card.NumberOfSet = GetNumberOfSet(number, set.maxCardInSet);
 
                 Console.WriteLine("Обрабатывается карта: " + card.Name + " | " + card.NumberOfSet);
+            } catch { Console.WriteLine(1); }
 
+            // Получаем тип карты
+            try
+            {
                 card.Type = (htmlDocumentMTG.DocumentNode.SelectSingleNode("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']" + "//span[@class='rus']").InnerText).Substring(2);
-                card.Illustrator = htmlDocumentMTG.DocumentNode.SelectSingleNode("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIVsub shadow']//table[@class='NoteDivWidth']//tr//td").InnerText.Split(':')[1].Trim();
+            } catch { Console.WriteLine("Не разобрал тип"); }
 
+            // Получаем иллюстратора
+            try
+            { 
+                card.Illustrator = htmlDocumentMTG.DocumentNode.SelectSingleNode("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIVsub shadow']//table[@class='NoteDivWidth']//tr//td").InnerText.Split(':')[1].Trim();
+            } catch { Console.WriteLine("Не разобрал иллюстратора"); }
+
+            // Получаем раритетность
+            try
+            {
                 if (!htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']")[4].InnerText.Contains("Базовая земля"))
                 {
                     switch (htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']")[4].InnerText.Split('-')[1].Trim())
@@ -150,17 +165,27 @@ namespace mtg
                 {
                     card.Rarity = "common";
                 }
+            } catch { Console.WriteLine("Не обработал редкость"); }
 
-                // Формируем стоимость
+            // Формируем стоимость
+            try
+            {
                 if (htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']" + "//img[@class='Mana']") != null)
                 {
                     foreach (HtmlNode c in htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']" + "//img[@class='Mana']"))
                     {
-                        card.Cost += c.GetAttributeValue("alt", "нету");
+                        var mana = c.GetAttributeValue("alt", "нету")[0].ToString();
+                        if (c.GetAttributeValue("alt", "нету").Length > 1)
+                            for (var i = 1; i < c.GetAttributeValue("alt", "не").Length; i++)
+                                mana += "/" + c.GetAttributeValue("alt", "не")[i];
+                        card.Cost += mana;
                     }
                 }
+            } catch { Console.WriteLine("Не обработал стоимость"); }
 
-                // Формируем цвет
+            // Формируем цвет
+            try
+            { 
                 if (card.Cost == null)
                 {
                     card.Color = "land";
@@ -174,12 +199,22 @@ namespace mtg
                     else if (card.Cost.Contains("G")) card.Color = "green";
                     else card.Color = "artifact";
                 }
-                else
+                else if(card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() > 1)
                 {
-                    card.Color = "multicolor";
+                    if (card.Cost.Contains("W")) card.Color += "white, ";
+                    if (card.Cost.Contains("U")) card.Color += "blue, ";
+                    if (card.Cost.Contains("R")) card.Color += "red, ";
+                    if (card.Cost.Contains("B")) card.Color += "black, ";
+                    if (card.Cost.Contains("G")) card.Color += "green, ";
+                    card.Color += (card.Cost.Contains("/")) ?  "hybrid, " : "multicolor";
+                    card.Color += "horizontal";
                 }
+                else { card.Color = "multicolor"; }
+            } catch { Console.WriteLine("Не обработал цвет");  }
 
-                // Проверяем изображение и, при необходимости, скачиваем
+            // Проверяем изображение и, при необходимости, скачиваем
+            try
+            {
                 if (!File.Exists(path + set.setCode + @"\" + number + ".jpg"))
                     card.Img = GetUrlCardImage(set.urlWizards, card.Name);
                 else card.Img = "";
@@ -200,8 +235,11 @@ namespace mtg
                     }
                 }
                 else card.FileImg = number + ".jpg";
-
-                // Выбираем шаблон и данные, специфичные для типов
+            } catch { Console.WriteLine("Не обработалось изображение"); }
+            
+            // Выбираем шаблон и данные, специфичные для типов
+            try
+            { 
                 if (card.Type.Contains("Сага")) //если Сага
                 {
                     card.stylesheet = "m15-saga";
@@ -395,12 +433,23 @@ namespace mtg
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Указать через пробелы: путь для сета, код сета, количество карт в сете, ссылку на карты сета на https://magic.wizards.com/");
             if (args.Length == 0)
             {
-                Console.WriteLine("Нет параметров");
-            } else
+                // Отладка
+                Set set = new Set
+                {
+                    setCode = "IKO",
+                    maxCardInSet = 274,
+                    urlWizards = @"https://magic.wizards.com/ru/articles/archive/card-image-gallery/ikoria-lair-behemoths"
+                };
+                Card card = GetCard(set, @"E:\OneDrive\MTG\Sets\", 218);
+                card.Print();
+                set.cards.Add(card);
+                SaveSet(set, @"E:\OneDrive\MTG\Sets\");
+            }
+            else
             {
+                Console.WriteLine("Путь, Код, Количество, Wizards");
                 String path = args[0];
                 Set set = new Set
                 {
@@ -410,8 +459,7 @@ namespace mtg
                 };
                 CreateSet(set, path);
                 SaveSet(set, path);
-            }
-
+            }            
             Console.WriteLine("Тыкни любую пимпу...");
             Console.ReadKey();
         }
