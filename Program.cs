@@ -61,6 +61,10 @@ public class Set
     /// </summary>
     public Int16 maxCardInSet;
     /// <summary>
+    /// Инвертировать символ common в белый?
+    /// </summary>
+    public String invertedCommonSymbol = "yes";
+    /// <summary>
     /// Список карт сета
     /// </summary>
     public List<Card> cards = new List<Card>();
@@ -82,17 +86,17 @@ namespace mtg
 {
     class Program
     {
-        public static String GetUrlCardImage(string url, string rusName)
+        public static List<String> GetUrlCardImage(string url, string rusName)
         {
             WebClient WZ = new WebClient();
             HtmlDocument htmlDocumentWZ = new HtmlDocument();
-            string urlCardImage = "";
+            var urlCardImage = new List<String>();
             htmlDocumentWZ.LoadHtml(WZ.DownloadString(url));
-                       
-            foreach (HtmlNode x in htmlDocumentWZ.DocumentNode.SelectNodes("//img"))           
-                if (WebUtility.HtmlDecode(x.GetAttributeValue("alt", "")) == rusName)               
-                    urlCardImage = WebUtility.HtmlDecode(x.GetAttributeValue("src", ""));
-            
+
+            foreach (HtmlNode x in htmlDocumentWZ.DocumentNode.SelectNodes("//img"))
+                if (WebUtility.HtmlDecode(x.GetAttributeValue("alt", "")) == rusName)
+                    urlCardImage.Add(WebUtility.HtmlDecode(x.GetAttributeValue("src", "")));
+
             return urlCardImage;
         }
         
@@ -119,8 +123,8 @@ namespace mtg
             try
             {
                 var N = htmlDocumentMTG.DocumentNode.SelectSingleNode("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']" + "//h2").InnerText;
-                card.Name = (N.Substring(N.IndexOf("//") + 3, N.Length - N.IndexOf("//") - 3)).Trim();
-                card.NameENG = (N.Substring(0, N.IndexOf("//"))).Trim();
+                card.Name = (N.Substring(N.IndexOf("//") + 3, N.Length - N.IndexOf("//") - 3)).Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' }).Trim();
+                card.NameENG = (N.Substring(0, N.IndexOf("//"))).Trim().Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' }).Trim();
 
                 card.Number = number;
                 card.NumberOfSet = GetNumberOfSet(number, set.maxCardInSet);
@@ -143,9 +147,11 @@ namespace mtg
             // Получаем раритетность
             try
             {
-                if (!htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']")[4].InnerText.Contains("Базовая земля"))
-                {
-                    switch (htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']")[4].InnerText.Split('-')[1].Trim())
+                var mtgRuRarity = htmlDocumentMTG.DocumentNode.SelectNodes("//table[@class='NoteDiv U shadow']" + "//div[@class='SearchCardInfoDIV shadow']")[4];
+                if (mtgRuRarity.InnerText.Trim() == "Редкость:")
+                    card.Rarity = "common";
+                else if (!mtgRuRarity.InnerText.Contains("Базовая земля"))
+                    switch (mtgRuRarity.InnerText.Split('-')[1].Trim())
                     {
                         case ("Необычная"):
                             card.Rarity = "uncommon";
@@ -160,11 +166,8 @@ namespace mtg
                             card.Rarity = "common";
                             break;
                     }
-                }
                 else
-                {
                     card.Rarity = "common";
-                }
             } catch { Console.WriteLine("Не обработал редкость"); }
 
             // Формируем стоимость
@@ -181,42 +184,33 @@ namespace mtg
                         card.Cost += mana;
                     }
                 }
+                else
+                    card.Cost = ""; 
             } catch { Console.WriteLine("Не обработал стоимость"); }
-
-            // Формируем цвет
-            try
-            { 
-                if (card.Cost == null)
-                {
-                    card.Color = "land";
-                }
-                else if (card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() <= 1)
-                {
-                    if (card.Cost.Contains("W")) card.Color = "white";
-                    else if (card.Cost.Contains("U")) card.Color = "blue";
-                    else if (card.Cost.Contains("R")) card.Color = "red";
-                    else if (card.Cost.Contains("B")) card.Color = "black";
-                    else if (card.Cost.Contains("G")) card.Color = "green";
-                    else card.Color = "artifact";
-                }
-                else if(card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() > 1)
-                {
-                    if (card.Cost.Contains("W")) card.Color += "white, ";
-                    if (card.Cost.Contains("U")) card.Color += "blue, ";
-                    if (card.Cost.Contains("R")) card.Color += "red, ";
-                    if (card.Cost.Contains("B")) card.Color += "black, ";
-                    if (card.Cost.Contains("G")) card.Color += "green, ";
-                    card.Color += (card.Cost.Contains("/")) ?  "hybrid, " : "multicolor";
-                    card.Color += "horizontal";
-                }
-                else { card.Color = "multicolor"; }
-            } catch { Console.WriteLine("Не обработал цвет");  }
-
+                        
             // Проверяем изображение и, при необходимости, скачиваем
             try
             {
+                var urlCardImage = GetUrlCardImage(set.urlWizards, card.Name);
                 if (!File.Exists(path + set.setCode + @"\" + number + ".jpg"))
-                    card.Img = GetUrlCardImage(set.urlWizards, card.Name);
+                {
+                    if (urlCardImage.Count == 1)
+                        card.Img = urlCardImage[0];
+                    else if (urlCardImage.Count > 1)
+                    {
+                        var count = 0;
+                        foreach (var uc in urlCardImage)
+                        {
+                            WebClient myWebClient = new WebClient();
+                            var img = new Bitmap(myWebClient.OpenRead(uc));
+                            img.Clone(new Rectangle(21, 42, 223, 164), img.PixelFormat).Save(path + set.setCode + "/" + (number + count) + ".jpg");
+                            count++;
+                        }
+                        card.Img = "";
+                        card.FileImg = number + ".jpg";
+                    }
+                        
+                }
                 else card.Img = "";
 
                 if (card.Img != "")
@@ -362,8 +356,58 @@ namespace mtg
             {
                 Console.WriteLine("Не обработалось...");
             }
-            // Печать карты для контроля!
-            //card.Print();
+
+            // Формируем цвет
+            try
+            {
+                if ((card.Cost == null) || (card.Cost == ""))
+                {
+                    card.Color = "land";
+                    if (card.RuleText != null)
+                        if (card.RuleText.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() == 2)
+                        {
+                            if (card.RuleText.Contains("W")) card.Color += ", white";
+                            if (card.RuleText.Contains("U")) card.Color += ", blue";
+                            if (card.RuleText.Contains("R")) card.Color += ", red";
+                            if (card.RuleText.Contains("B")) card.Color += ", black";
+                            if (card.RuleText.Contains("G")) card.Color += ", green";
+                            //card.Color += (card.Cost.Contains("/")) ? "hybrid, " : "multicolor";
+                            card.Color += ", hybrid, horizontal";
+                        } else if (card.RuleText.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() > 2)
+                        {
+                            card.Color += ", multicolor";
+                        }
+                    if (card.Type.Split('-')[0].Trim() == "Базовая Земля")
+                    {
+                        if (card.Type.Split('-')[1].Trim() == "Равнина") card.Color += ", white"; 
+                        if (card.Type.Split('-')[1].Trim() == "Остров") card.Color += ", blue"; 
+                        if (card.Type.Split('-')[1].Trim() == "Гора") card.Color += ", red"; 
+                        if (card.Type.Split('-')[1].Trim() == "Болото") card.Color += ", black"; 
+                        if (card.Type.Split('-')[1].Trim() == "Лес") card.Color += ", green"; 
+                    }
+                }
+                else if (card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() <= 1)
+                {
+                    if (card.Cost.Contains("W")) card.Color = "white";
+                    else if (card.Cost.Contains("U")) card.Color = "blue";
+                    else if (card.Cost.Contains("R")) card.Color = "red";
+                    else if (card.Cost.Contains("B")) card.Color = "black";
+                    else if (card.Cost.Contains("G")) card.Color = "green";
+                    else card.Color = "artifact";
+                }
+                else if ((card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() > 1) && (card.Cost.Contains("/")))
+                {
+                    if (card.Cost.Contains("W")) card.Color += "white, ";
+                    if (card.Cost.Contains("U")) card.Color += "blue, ";
+                    if (card.Cost.Contains("R")) card.Color += "red, ";
+                    if (card.Cost.Contains("B")) card.Color += "black, ";
+                    if (card.Cost.Contains("G")) card.Color += "green, ";
+                    card.Color += (card.Cost.Contains("/")) ? "hybrid, " : "multicolor, ";
+                    card.Color += "horizontal";
+                }
+                else { card.Color = "multicolor"; }
+            }
+            catch { Console.WriteLine("Не обработал цвет"); }
 
             return card;
         }
@@ -394,12 +438,19 @@ namespace mtg
                     if (card.Type.Contains("Сага")) { cardTextAll += "\t\tchapter textboxes: " + card.TextBoxes + Environment.NewLine; }
                     if (card.Type.Contains("Сага")) { cardTextAll += "\t\tchapter number coordinates: " + "208,329,370," + Environment.NewLine; }
                     cardTextAll += "\t\ttext box mana symbols: magic-mana-small.mse-symbol-font" + Environment.NewLine;
-                    cardTextAll += "\t\tinverted common symbol: yes" + Environment.NewLine;
+                    if ((card.Rarity == "common") && (set.invertedCommonSymbol == "no"))
+                        cardTextAll += "\t\tinverted common symbol: no" + Environment.NewLine;
+                    else
+                        cardTextAll += "\t\tinverted common symbol: yes" + Environment.NewLine;
                     cardTextAll += "\t\toverlay:" + Environment.NewLine;
                     cardTextAll += "\tnotes: Создано автоматически" + Environment.NewLine;
                     cardTextAll += "\ttime created: " + DateTime.Now.ToString("u").Remove(DateTime.Today.ToString("u").Length - 1) + Environment.NewLine;
                     cardTextAll += "\ttime modified: " + DateTime.Now.ToString("u").Remove(DateTime.Today.ToString("u").Length - 1) + Environment.NewLine;
                     if (card.Type.Contains("Сага")) { cardTextAll += "\textra data:" + Environment.NewLine + "\t\tmagic-m15-saga: chapter text: " + card.RuleText + Environment.NewLine; }
+                    if (card.Type.Contains("Земля") && (card.stylesheet == "m15-flavor-bar"))
+                        cardTextAll += "\textra data:" + Environment.NewLine +
+                            "\t\tmagic-m15-flavor-bar:" + Environment.NewLine +
+                                "\t\t\tstamp: " + card.Color + Environment.NewLine;
                     cardTextAll += "\tcard color: " + card.Color + Environment.NewLine;
                     cardTextAll += "\tname: <b>" + card.Name + "</b>" + Environment.NewLine;
                     cardTextAll += "\tcasting cost: " + card.Cost + Environment.NewLine;
@@ -414,6 +465,14 @@ namespace mtg
                     if (card.Type.Contains("Planeswalker")) { cardTextAll += "\tloyalty: " + card.loyalty + Environment.NewLine; }
                     for (int lc = 0; lc < card.LoyaltyCost.Count(); lc++)
                         cardTextAll += "\tloyalty cost " + (lc + 1) + ": " + card.LoyaltyCost[lc] + Environment.NewLine;
+                    if (card.Type.Split('-')[0].Trim() == "Базовая Земля")
+                    {
+                        if (card.Type.Split('-')[1].Trim() == "Равнина") cardTextAll += "\twatermark: mana symbol white" + Environment.NewLine; ;
+                        if (card.Type.Split('-')[1].Trim() == "Остров") cardTextAll += "\twatermark: mana symbol blue" + Environment.NewLine; 
+                        if (card.Type.Split('-')[1].Trim() == "Гора") cardTextAll += "\twatermark: mana symbol red" + Environment.NewLine; 
+                        if (card.Type.Split('-')[1].Trim() == "Болото") cardTextAll += "\twatermark: mana symbol black" + Environment.NewLine;
+                        if (card.Type.Split('-')[1].Trim() == "Лес") cardTextAll += "\twatermark: mana symbol green" + Environment.NewLine;
+                    }
                     cardTextAll += "\tcustom card number: " + card.NumberOfSet + Environment.NewLine;
                     cardTextAll += "\tillustrator: " + card.Illustrator + Environment.NewLine;
                     if (card.Type.Contains("Сага")) { cardTextAll += "\tspecial text: " + card.SpecialText + Environment.NewLine; }
@@ -439,23 +498,26 @@ namespace mtg
                 Set set = new Set
                 {
                     setCode = "IKO",
+                    invertedCommonSymbol = "no",
                     maxCardInSet = 274,
                     urlWizards = @"https://magic.wizards.com/ru/articles/archive/card-image-gallery/ikoria-lair-behemoths"
                 };
-                Card card = GetCard(set, @"E:\OneDrive\MTG\Sets\", 218);
-                card.Print();
-                set.cards.Add(card);
-                SaveSet(set, @"E:\OneDrive\MTG\Sets\");
+                //Card card = GetCard(set, @"D:\OneDrive\MTG\Sets\", 262);
+                //card.Print();
+                for (var i = 259; i <= 274; i++)
+                    set.cards.Add(GetCard(set, @"D:\OneDrive\MTG\Sets\", i));
+                SaveSet(set, @"D:\OneDrive\MTG\Sets\");
             }
             else
             {
-                Console.WriteLine("Путь, Код, Количество, Wizards");
+                Console.WriteLine("Путь, Код, no/yes: черные/белые комона, Количество, Wizards");
                 String path = args[0];
                 Set set = new Set
                 {
                     setCode = args[1], //"C20",
-                    maxCardInSet = Int16.Parse(args[2]), //322,
-                    urlWizards = args[3] //"https://magic.wizards.com/ru/articles/archive/card-image-gallery/commander-2020-edition"
+                    invertedCommonSymbol = args[2],
+                    maxCardInSet = Int16.Parse(args[3]), //322,
+                    urlWizards = args[4] //"https://magic.wizards.com/ru/articles/archive/card-image-gallery/commander-2020-edition"
                 };
                 CreateSet(set, path);
                 SaveSet(set, path);
