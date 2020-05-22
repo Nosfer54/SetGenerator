@@ -209,10 +209,10 @@ namespace mtg
                         card.Img = "";
                         card.FileImg = number + ".jpg";
                     }
-                        
+
                 }
                 else card.Img = "";
-
+                               
                 if (card.Img != "")
                 {
                     WebClient myWebClient = new WebClient();
@@ -313,7 +313,18 @@ namespace mtg
                             }
                             else
                             {
-                                card.RuleText = card.RuleText.Replace(rt + "", "<sym>" + a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "") + "</sym>");
+                                if (a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "").Length == 1)
+                                    card.RuleText = card.RuleText.Replace(rt + "", "<sym>" + a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "") + "</sym>");
+                                else
+                                {
+                                    var str = "";
+                                    for (var i = 0; i < a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "").Length; i++)
+                                        if (i != a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "").Length - 1)
+                                            str += a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "")[i] + "/";
+                                        else
+                                            str += a.DocumentNode.SelectSingleNode("//img").GetAttributeValue("alt", "")[i];
+                                    card.RuleText = card.RuleText.Replace(rt + "", "<sym>" + str + "</sym>");
+                                }
                             }
                         }
                         card.RuleText = card.RuleText.Replace("<p>", "\n\t\t");
@@ -323,6 +334,7 @@ namespace mtg
                         card.RuleText = card.RuleText.Replace("</nobr>", "");
                         card.RuleText = card.RuleText.Replace("<u>", "");
                         card.RuleText = card.RuleText.Replace("</u>", "");
+                        card.RuleText = card.RuleText.Replace("o", "");
                     }
                     if (htmlDocumentMTG.DocumentNode.SelectSingleNode("//div[@class='SearchCardInfoDIVsub SearchCardTextDiv shadow']//span[@class='rus']") != null)
                     {
@@ -364,19 +376,19 @@ namespace mtg
                 {
                     card.Color = "land";
                     if (card.RuleText != null)
-                        if (card.RuleText.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() == 2)
-                        {
-                            if (card.RuleText.Contains("W")) card.Color += ", white";
-                            if (card.RuleText.Contains("U")) card.Color += ", blue";
-                            if (card.RuleText.Contains("R")) card.Color += ", red";
-                            if (card.RuleText.Contains("B")) card.Color += ", black";
-                            if (card.RuleText.Contains("G")) card.Color += ", green";
-                            //card.Color += (card.Cost.Contains("/")) ? "hybrid, " : "multicolor";
-                            card.Color += ", hybrid, horizontal";
-                        } else if (card.RuleText.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() > 2)
-                        {
-                            card.Color += ", multicolor";
-                        }
+                    {
+                        if (card.RuleText.Contains("W")) card.Color += ", white";
+                        if (card.RuleText.Contains("U")) card.Color += ", blue";
+                        if (card.RuleText.Contains("R")) card.Color += ", red";
+                        if (card.RuleText.Contains("B")) card.Color += ", black";
+                        if (card.RuleText.Contains("G")) card.Color += ", green";
+
+                        var countColor = card.Color.Count(x => x == ',');
+
+                        if (countColor == 2) { card.Color += ", hybrid, horizontal"; }
+                        if (countColor > 2) { card.Color = "land, multicolor"; }
+                    }
+
                     if (card.Type.Split('-')[0].Trim() == "Базовая Земля")
                     {
                         if (card.Type.Split('-')[1].Trim() == "Равнина") card.Color += ", white"; 
@@ -385,6 +397,15 @@ namespace mtg
                         if (card.Type.Split('-')[1].Trim() == "Болото") card.Color += ", black"; 
                         if (card.Type.Split('-')[1].Trim() == "Лес") card.Color += ", green"; 
                     }
+                }
+                else if (card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() == 2)
+                {
+                    if (card.Cost.Contains("W")) card.Color += "white, ";
+                    if (card.Cost.Contains("U")) card.Color += "blue, ";
+                    if (card.Cost.Contains("R")) card.Color += "red, ";
+                    if (card.Cost.Contains("B")) card.Color += "black, ";
+                    if (card.Cost.Contains("G")) card.Color += "green, ";
+                    card.Color += "multicolor";
                 }
                 else if (card.Cost.Trim(new Char[] { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'X', 'Y', 'Z' }).Distinct().Count() <= 1)
                 {
@@ -502,11 +523,9 @@ namespace mtg
                     maxCardInSet = 274,
                     urlWizards = @"https://magic.wizards.com/ru/articles/archive/card-image-gallery/ikoria-lair-behemoths"
                 };
-                //Card card = GetCard(set, @"D:\OneDrive\MTG\Sets\", 262);
-                //card.Print();
-                for (var i = 259; i <= 274; i++)
-                    set.cards.Add(GetCard(set, @"D:\OneDrive\MTG\Sets\", i));
-                SaveSet(set, @"D:\OneDrive\MTG\Sets\");
+                for (var i = 243; i <= 274; i++)
+                    set.cards.Add(GetCard(set, @"E:\OneDrive\MTG\Sets\", i));
+                SaveSet(set, @"E:\OneDrive\MTG\Sets\");
             }
             else
             {
